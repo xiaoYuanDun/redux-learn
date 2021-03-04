@@ -30,3 +30,7 @@ git push -u origin master
 git push 将当前分支推送至远程同名分支
 git push origin [branch-name] 推送本地某分支至远程某分支
 git push -u origin [branch-name] 推送本地某分支至远程某分支，并跟踪
+
+首次提交需要提交秘钥至 github
+cat ~/.ssh/id_rsa.pub  
+粘贴到 github/settings/keys 中对应的 key 即可
