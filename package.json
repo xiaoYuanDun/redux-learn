@@ -1,0 +1,9 @@
+{
+  "name": "redux-learn",
+  "version": "1.0.0",
+  "description": "redux source code learning",
+  "main": "index.js",
+  "repository": "https://github.com/xiaoYuanDun/redux-learn.git",
+  "author": "weiqihao",
+  "license": "MIT"
+}
