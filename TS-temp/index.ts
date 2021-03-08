@@ -137,3 +137,7 @@ type ObjDiffAttr = DiffObjAttr<Test1, Test2>
 
 type Bar<T> = T extends { a: (x: infer U) => void, b: (x: infer U) => void } ? U : never;
 type T21 = Bar<{ a: (x: string) => void, b: (x: number) => void }>;
+
+
+
+// test
