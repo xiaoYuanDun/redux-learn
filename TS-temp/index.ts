@@ -98,6 +98,9 @@ type T2_2 = UToI_2_2<T1>
  * 
  * TODO
  * https://juejin.cn/post/6844904066179579918
+ * https://segmentfault.com/a/1190000018514540?utm_source=tag-newest
+ * https://github.com/Microsoft/TypeScript/pull/21496
+ * https://zhuanlan.zhihu.com/p/58704376
  */
 
 
@@ -140,4 +143,19 @@ type T21 = Bar<{ a: (x: string) => void, b: (x: number) => void }>;
 
 
 
-// test
+// type Trans<T> = T extends any ? ['', T] : never
+// type Process2<T> = [T] extends [(k: infer I) => void] ? I : never
+type Process<T> = [T] extends [infer R] ? R : never
+
+// type Tt = ((k: (k: 'a') => any) => any) | ((k: (k: 'b') => any) => any) | ((k: (k: 'c') => any) => any)
+type Tt = ((k: 'a') => any) | ((k: 'b') => any) | ((k: 'c') => any)
+
+// type aaa = Trans<Tt>
+type aa1 = Process<Tt>
+type aa2 = UnionToIntersection<Tt>
+
+type NakedType<T> = [T] extends [boolean] ? "YES" : "NO"
+
+type sd = string | boolean | string
+
+type asd = NakedType<sd>
