@@ -14,7 +14,7 @@ const model = {
       console.log(222);
       return state;
     },
-    insert(state: State, userData: any) {
+    insert(state: State, userData: string) {
       console.log('insert user data', userData);
     },
   },
@@ -68,14 +68,33 @@ const commit: r2 = () => {};
 
 // 思路2, 构造对应格式进行
 type P1<T, K extends keyof T = keyof T> = T extends any ? T[K] : never;
-type ConReducer<T> = T extends (type: infer R1, payload: infer R2) => void
-  ? (type: R1, payload: R2) => void
-  : T extends (type: infer R1) => void
-  ? (type: R1) => void
+
+// function commit2<T extends keyof AllReducer>(type: T) {}
+
+// type GetCurAction<T extends keyof AllReducer> = AllReducer[T];
+// type GetParams<T> = T extends (state: any, extra: infer R) => any ? R : never;
+
+type Comm = ((id: '1') => any) & ((name: '2') => any);
+const ddd: ((id: '1') => any) & ((name: '2') => any) = () => {};
+
+type GetCurAction<T extends keyof AllReducer> = AllReducer[T] extends (
+  state: any,
+  extra: infer R
+) => any
+  ? R
   : never;
 
-type reducerOverload = P1<AllReducer>;
-// 1
+type GetSingle<T> = unknown extends T ? undefined : T;
+
+function commit2<T extends keyof AllReducer>(
+  type: T,
+  extra: GetSingle<GetCurAction<T>>
+) {}
+
+type zas = GetCurAction<'extraAction'>;
+type z2 = GetSingle<zas>;
+
+// commit2('insert'); -----
 
 // use Lookup<T, K> instead of T[K] in cases where the compiler
 //  cannot verify that K is a key of T
