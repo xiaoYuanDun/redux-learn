@@ -6,7 +6,7 @@ type sagaCall = {
 
 const model = {
     reducer: {
-        extraAction(state: State, payload: any){ 
+        extraAction(state: State, payload: { id: string, age: number }){ 
             console.log(111)
             return state
         },
@@ -38,14 +38,16 @@ const model = {
  * 4. effects 有2个参数时, payload 位于首位, 有1个参数时, sagaCall 参数位于首位
  */
 
+// 思路1, 全部使用 函数重载进行
 // 得到 Model 类型
 type Model = typeof model
 
 // 得到所有 reducer, effect 包含的 function, 用于后面的类型提示
-type AllFunction =  Model['reducer'] & Model['effects']
+type AllReducer = Model['reducer']
+type AllFunction =  AllReducer & Model['effects']
 
 type GetOverload<T, K extends keyof T = keyof T> = {
-    [k in K]: (key: k) => any
+    [k in K]: (type: k) => any
 }
 
 type Values<T, K extends keyof T = keyof T> = T[K]
@@ -54,6 +56,25 @@ type AllTypedObj = GetOverload<AllFunction>
 
 type Res1 = Values<AllTypedObj>
 
+type Jiagong1<T> = T extends any ? (temp: T) => void : never
+type r1 = Jiagong1<Res1>
+
+type Jiagong2<T> = [T] extends [(k: infer R) => void] ? R : never
+type r2 = Jiagong2<r1>
+
+const commit: r2 = () => {}
+
+// commit('extraAction')
+
+
+// 思路2, 构造对应格式进行
+type P1<T, K extends keyof T = keyof T> = T extends any ? T[K] : never
+type ConReducer<T> = T extends ((type: infer R1, payload: infer R2) => void) 
+  ? ((type: R1, payload: R2) => void)  
+  : T extends ((type: infer R1) => void)
+    ? ((type: R1) => void) : never
+
+type reducerOverload = P1<AllReducer>
 
 
 
@@ -100,7 +121,6 @@ type T2_2 = UToI_2_2<T1>
  * https://juejin.cn/post/6844904066179579918
  * https://segmentfault.com/a/1190000018514540?utm_source=tag-newest
  * https://github.com/Microsoft/TypeScript/pull/21496
- * https://zhuanlan.zhihu.com/p/58704376
  */
 
 
@@ -114,6 +134,7 @@ type A = keyof Obj
 
 
 
+// -------------------------------------------------------------------
 // 普通 Diff 只能用于简单类型过滤, 想过滤对象的属性diff, 可使用如下增强类型
 type Test1 = {name: string, age: number}
 type Test2 = {name: string, sex: string }
@@ -142,20 +163,3 @@ type Bar<T> = T extends { a: (x: infer U) => void, b: (x: infer U) => void } ? U
 type T21 = Bar<{ a: (x: string) => void, b: (x: number) => void }>;
 
 
-
-// type Trans<T> = T extends any ? ['', T] : never
-// type Process2<T> = [T] extends [(k: infer I) => void] ? I : never
-type Process<T> = [T] extends [infer R] ? R : never
-
-// type Tt = ((k: (k: 'a') => any) => any) | ((k: (k: 'b') => any) => any) | ((k: (k: 'c') => any) => any)
-type Tt = ((k: 'a') => any) | ((k: 'b') => any) | ((k: 'c') => any)
-
-// type aaa = Trans<Tt>
-type aa1 = Process<Tt>
-type aa2 = UnionToIntersection<Tt>
-
-type NakedType<T> = [T] extends [boolean] ? "YES" : "NO"
-
-type sd = string | boolean | string
-
-type asd = NakedType<sd>
