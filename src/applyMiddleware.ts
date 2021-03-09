@@ -10,7 +10,7 @@
  *
  *  const store = createStore(reducer, preloadedState, applyMiddlewar(middleware_1, middleware_2, ...middleware_n))
  *  首先看看一个中间件的大致结构(若要编写中间件, 就必须遵循这个结构), 后面会用到:
- *  const loggerMiddleware = (middlewareAPI) => next => action => {
+ *  const loggerMiddleware = (middlewareAPI: { getState, dispatch }) => next => action => {
  *      ...
  *      next(action)
  *      ...
