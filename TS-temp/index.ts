@@ -17,6 +17,9 @@ const model = {
     insert(state: State, userData: string) {
       console.log('insert user data', userData);
     },
+    submit(state: State, payload: number) {
+      console.log('payload');
+    },
   },
   effects: {
     *fetchData({ call }: sagaCall) {
@@ -66,6 +69,8 @@ const commit: r2 = () => {};
 
 // commit('extraAction')
 
+// commit('extraAction')
+
 // 思路2, 构造对应格式进行
 type P1<T, K extends keyof T = keyof T> = T extends any ? T[K] : never;
 
@@ -84,17 +89,92 @@ type GetCurAction<T extends keyof AllReducer> = AllReducer[T] extends (
   ? R
   : never;
 
-type GetSingle<T> = unknown extends T ? undefined : T;
+type GetExtre<T> = unknown extends T ? {} : T;
 
 function commit2<T extends keyof AllReducer>(
   type: T,
-  extra: GetSingle<GetCurAction<T>>
+  extra: GetExtre<GetCurAction<T>>
 ) {}
+// function commit2<T extends keyof AllReducer>(type: GetSingleType<T>) {}
 
 type zas = GetCurAction<'extraAction'>;
-type z2 = GetSingle<zas>;
+type z2 = GetExtre<zas>;
 
-// commit2('insert'); -----
+/**
+ * 把 reducer 集合的形式转换为我们需要的类型格式(对象转union), 如:
+ *
+ * type origin = {
+ *   extraAction(state: State, payload: {
+ *     id: string;
+ *     age: number;
+ *   }): any;
+ *   add(state: State): any;
+ *   insert(state: State, userData: string): void;
+ *  }
+ *
+ * type target = ((key: 'extraAction', extra: { id: string; age: number }) => any)
+ *   | ((key: 'add', extra: unknown) => any)
+ *   | ((key: 'insert', extra: string) => any);
+ *
+ */
+type ReducerProcesser<T, K extends keyof T = keyof T> = {
+  [key in K]: T[key] extends (state: any, extra: infer R) => any
+    ? (key: key, extra: R) => any
+    : {};
+}[K];
+
+/**
+ * 判断新函数第二个参数(extra)类型, 若为 unknown 表示在上一步根本不存在 extra
+ * 这样就可以区分有无 extra 参数, 取到函数 extra 的 key 集合
+ * !!!  这里注意, unknown 为顶级类型, 任何类型 extends unknown 都成立
+ * !!!  所以要判断一个类型 T 是否为 unknown, 就使用 unknown extends T
+ * !!!  不能使用 any
+ * TODO  这里存在一个问题, 如果把 ActionWithExtra 拆分为两个步骤会得到不同结果
+ * TODO  大概猜想是由于 '分布式条件类型'/'裸类型' 引起的, 后期找时间测试, 这里的知识点还不是很清晰
+ * TODO  两个步骤如下:
+ * TODO  type AWE1<T> = T extends (key: any, extre: infer R1) => any ? R1 : never
+ * TODO  type AWE1<T> = unknown extends T ? never : T;
+ */
+type ActionWithExtra<T> = T extends (key: infer R, extre: infer R1) => any
+  ? unknown extends R1
+    ? never
+    : R
+  : never;
+
+type WithExtra = ActionWithExtra<ReducerProcesser<AllReducer>>;
+type NoExtea = Exclude<keyof AllReducer, WithExtra>;
+
+type WithExtraObj = Pick<AllReducer, WithExtra>;
+
+// ---------------------------
+// type FunctionWithExtra = <T extends keyof WithExtraObj>(
+//   type: T,
+//   extra: GetExtre<GetCurAction<T>>
+// ) => void;
+
+// type FunctionWithoutExtra = (type: NoExtea) => void;
+
+// const commit3: FunctionWithoutExtra & FunctionWithExtra = () => {};
+// ---------------------------
+
+// function commit3(type: NoExtea);
+// function commit3<T extends keyof WithExtraObj>(
+//   type: T,
+//   extra: GetExtre<GetCurAction<T>>
+// ) {}
+
+// commit3('add');
+
+function qwe(name: '123');
+function qwe(n: string, extra) {}
+// function asd(name: '456')
+// function asd(name: string, extra) {
+//   if (extra) {
+//     console.log('extra');
+//   } else {
+//     console.log('name');
+//   }
+// }
 
 // use Lookup<T, K> instead of T[K] in cases where the compiler
 //  cannot verify that K is a key of T
