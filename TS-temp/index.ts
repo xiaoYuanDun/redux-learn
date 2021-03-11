@@ -14,10 +14,14 @@ const model = {
       console.log(222);
       return state;
     },
-    insert(state: State, userData: string) {
-      console.log('insert user data', userData);
+    sec(state: State) {
+      console.log(333);
+      return state;
     },
-    submit(state: State, payload: number) {
+    insert(state: State, recore?: string) {
+      console.log('insert user data', recore);
+    },
+    submit(state: State, data: number) {
       console.log('payload');
     },
   },
@@ -72,15 +76,6 @@ const commit: r2 = () => {};
 // commit('extraAction')
 
 // 思路2, 构造对应格式进行
-type P1<T, K extends keyof T = keyof T> = T extends any ? T[K] : never;
-
-// function commit2<T extends keyof AllReducer>(type: T) {}
-
-// type GetCurAction<T extends keyof AllReducer> = AllReducer[T];
-// type GetParams<T> = T extends (state: any, extra: infer R) => any ? R : never;
-
-type Comm = ((id: '1') => any) & ((name: '2') => any);
-const ddd: ((id: '1') => any) & ((name: '2') => any) = () => {};
 
 type GetCurAction<T extends keyof AllReducer> = AllReducer[T] extends (
   state: any,
@@ -129,52 +124,106 @@ type ReducerProcesser<T, K extends keyof T = keyof T> = {
  * !!!  这里注意, unknown 为顶级类型, 任何类型 extends unknown 都成立
  * !!!  所以要判断一个类型 T 是否为 unknown, 就使用 unknown extends T
  * !!!  不能使用 any
- * TODO  这里存在一个问题, 如果把 ActionWithExtra 拆分为两个步骤会得到不同结果
+ * TODO  这里存在一个问题, 如果把 GetKeysWithExtra 拆分为两个步骤会得到不同结果
  * TODO  大概猜想是由于 '分布式条件类型'/'裸类型' 引起的, 后期找时间测试, 这里的知识点还不是很清晰
  * TODO  两个步骤如下:
  * TODO  type AWE1<T> = T extends (key: any, extre: infer R1) => any ? R1 : never
  * TODO  type AWE1<T> = unknown extends T ? never : T;
  */
-type ActionWithExtra<T> = T extends (key: infer R, extre: infer R1) => any
+type GetKeysWithExtra<T> = T extends (key: infer R, extre: infer R1) => any
   ? unknown extends R1
     ? never
     : R
   : never;
 
-type WithExtra = ActionWithExtra<ReducerProcesser<AllReducer>>;
-type NoExtea = Exclude<keyof AllReducer, WithExtra>;
+/**
+ * 通过 extends extra? 判断是否有可选参数时, 会得到如下结果(这里以 AllReducer 为例):
+ *
+ * type PartialExtra =
+ *   | ((key: 'add', extra: unknown) => any)
+ *   | ((key: 'sec', extra: unknown) => any)
+ *   | ((key: 'insert', extra: string) => any);
+ *
+ * 可以发现, 不包含 extra 的函数也通过了验证, 不过其类型为 unknown, 而真正的可选参数类型为定义时的类型
+ * 可以通过这一点来区分它们
+ */
+// type GetKeysWithPartialExtra<T, K extends keyof T = keyof T> = {
+//   [key in K]: T[key] extends (state: any, extra?: infer R) => any
+//     ? unknown extends R
+//       ? never
+//       : (key: key, extra: R) => any
+//     : never;
+// }[K];
+type GetKeysWithPartialExtra<T> = T extends (
+  key: infer R,
+  extra?: infer R1
+) => any
+  ? unknown extends R1
+    ? never
+    : R
+  : never;
 
-type WithExtraObj = Pick<AllReducer, WithExtra>;
+// 整体处理 reducers 格式
+type ProcessedReducers = ReducerProcesser<AllReducer>;
 
-// ---------------------------
-// type FunctionWithExtra = <T extends keyof WithExtraObj>(
-//   type: T,
-//   extra: GetExtre<GetCurAction<T>>
-// ) => void;
+// 得到 包含extra的reducer 的key的集合
+type KeysWithExtra = GetKeysWithExtra<ProcessedReducers>;
 
-// type FunctionWithoutExtra = (type: NoExtea) => void;
+// 得到 包含可选extra 的reducer的key的集合
+type KeysWithPartialExtra = GetKeysWithPartialExtra<ProcessedReducers>;
 
-// const commit3: FunctionWithoutExtra & FunctionWithExtra = () => {};
-// ---------------------------
+/**
+ * 得到 不包含extra 的reducer的key的集合
+ *
+ * 因为包含可选extra 的key集合需要同时出现在 KeysWithExtra, KeysWithPartialExtra 中
+ * 所以这里做一个简单处理
+ */
+type NoExtea = Exclude<
+  keyof AllReducer,
+  Exclude<KeysWithExtra, KeysWithPartialExtra>
+>;
 
-// function commit3(type: NoExtea);
-// function commit3<T extends keyof WithExtraObj>(
-//   type: T,
-//   extra: GetExtre<GetCurAction<T>>
-// ) {}
+// 未完待续 ^_^
+type WithExtraObj = Pick<AllReducer, KeysWithExtra>;
 
-// commit3('add');
+type FunctionWithExtra = <T extends keyof WithExtraObj>(
+  type: T,
+  extra: GetExtre<GetCurAction<T>>
+) => void;
 
-function qwe(name: '123');
-function qwe(n: string, extra) {}
-// function asd(name: '456')
-// function asd(name: string, extra) {
-//   if (extra) {
-//     console.log('extra');
-//   } else {
-//     console.log('name');
-//   }
-// }
+type FunctionWithoutExtra = (type: NoExtea) => void;
+
+const commit3: FunctionWithoutExtra & FunctionWithExtra = () => {};
+
+type dsa = GetTypeWithPartialExtra<AllReducer>;
+
+type ddd1 =
+  | ((
+      key: 'extraAction',
+      extra: {
+        id: string;
+        age: number;
+      }
+    ) => any)
+  | ((key: 'add', extra: unknown) => any)
+  | ((key: 'sec', extra: unknown) => any)
+  | ((key: 'insert', extra: string | undefined) => any)
+  | ((key: 'submit', extra: number) => any);
+
+type ddd2 =
+  | ((key: 'add', extra: unknown) => any)
+  | ((key: 'sec', extra: unknown) => any)
+  | ((key: 'insert', extra: string) => any);
+// type FFFF<T> = T extends (state: any, extra?: infer R) => any
+//   ? (extra?: R) => any
+//   : T extends (state: any, extra: infer R1) => any
+//   ? (extra: R1) => any
+//   : never;
+
+// type Fun = (state: any, extra: number) => any;
+
+// type asdasd = FFFF<Fun>;
+// commit3('insert');
 
 // use Lookup<T, K> instead of T[K] in cases where the compiler
 //  cannot verify that K is a key of T
@@ -255,3 +304,23 @@ type Bar<T> = T extends { a: (x: infer U) => void; b: (x: infer U) => void }
   ? U
   : never;
 type T21 = Bar<{ a: (x: string) => void; b: (x: number) => void }>;
+
+// -------------------------------------------------
+type ds = ReducerProcesser<AllReducer>;
+
+/**
+ *
+ * 这里验证 extends 可选参数的时候, 遇到一个问题
+ * 不同的环境执行下面泛型类型, 得到的类型是不同的
+ * 后经过测试, 发现是因为 tsconfig 配置文件导致的
+ * 这里的问题是 compilerOptions.strict 引起的
+ */
+type FFFF<T> = T extends (state: any, extra?: infer R) => any
+  ? (extra?: R) => any
+  : T extends (state: any, extra: infer R1) => any
+  ? (extra: R1) => any
+  : never;
+
+type Fun = (state: any, extra: number) => any;
+
+type asdasd = FFFF<Fun>;

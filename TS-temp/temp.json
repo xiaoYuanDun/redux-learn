@@ -10,18 +10,11 @@
     "sourceMap": true,
     "baseUrl": ".",
     "strict": true,
-    "lib": [
-      "dom",
-      "es2017"
-   ],
+    "lib": ["dom", "es2017"],
     "paths": {
       "common/*": ["common/*"]
     },
     "allowSyntheticDefaultImports": true
   },
-  "exclude": [
-    "/client/node_modules/",
-    "/server/node_modules/",
-    "**/*.spec.ts"
-  ],
+  "exclude": ["/client/node_modules/", "/server/node_modules/", "**/*.spec.ts"]
 }
