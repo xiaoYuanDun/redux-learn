@@ -1,10 +1,16 @@
-type State = any;
-type sagaCall = {
-  call: Function;
-  put: Function;
+import { EffectsMapObject, EffectsCommandMap } from 'dva';
+import { ReducersMapObject, AnyAction } from 'redux';
+
+const initState = {
+  name: 'xiaoMing',
+  age: 18,
 };
 
+type State = typeof initState;
+
 const model = {
+  namespace: 'hook-example',
+  state: initState,
   reducer: {
     extraAction(state: State, payload: { id: string; age: number }) {
       console.log(111);
@@ -21,82 +27,85 @@ const model = {
     insert(state: State, recore?: string) {
       console.log('insert user data', recore);
     },
-    submit(state: State, data: number) {
+    submit(state: State, data: Record<string, any>) {
       console.log('payload');
     },
   },
   effects: {
-    *fetchData({ call }: sagaCall) {
+    *fetchData(name: number, { call }: any) {
       console.log('fetch data');
     },
-    *fetchUserData(id: string, { call, put }: sagaCall) {
+    *fetchUserData(id: string, { call, put }: any) {
       console.log('fetch user data');
       console.log('userId', id);
       put('userData');
+    },
+    *login({ call }: any) {
+      console.log('login');
     },
   },
 };
 
 /**
- * 整理需求，总结函数类型:
- * 1. reducer 函数有可能不带 payload, 只有一个默认参数 state, 最多2个参数
- * 2. reducer state 参数总是位于第一个
- * 3. effects 函数有可能不带 payload, 只有一个默认 sagaCall 参数, 最多2个参数
- * 4. effects 有2个参数时, payload 位于首位, 有1个参数时, sagaCall 参数位于首位
+ *
+ * 改造 reducers 结构, 源生的 reducer 函数结构为 (state, action: { type: string, payload: any }) => any
+ * 我们在定义 reducer 时只关注 payload(extra) 属性, 函数结构略有不同, 需要转化为源生的 reducer 格式
+ *
+ * 可以理解为 payload 于 action 之间的拆包和装包
+ *
  */
 
-// 思路1, 全部使用 函数重载进行
-// 得到 Model 类型
-type Model = typeof model;
-
-// 得到所有 reducer, effect 包含的 function, 用于后面的类型提示
-type AllReducer = Model['reducer'];
-type AllFunction = AllReducer & Model['effects'];
-
-type GetOverload<T, K extends keyof T = keyof T> = {
-  [k in K]: (type: k) => any;
+const reducerWrapper = (reducers: ReducersMapObject) => {
+  Object.keys(reducers).reduce<ReducersMapObject>((acc, cur) => {
+    acc[cur] = (state: State, { payload }: AnyAction) =>
+      reducers[cur](state, payload);
+    return acc;
+  }, {});
 };
 
-type Values<T, K extends keyof T = keyof T> = T[K];
-
-type AllTypedObj = GetOverload<AllFunction>;
-
-type Res1 = Values<AllTypedObj>;
-
-type Jiagong1<T> = T extends any ? (temp: T) => void : never;
-type r1 = Jiagong1<Res1>;
-
-type Jiagong2<T> = [T] extends [(k: infer R) => void] ? R : never;
-type r2 = Jiagong2<r1>;
-
-const commit: r2 = () => {};
-
-// commit('extraAction')
-
-// commit('extraAction')
+const effectWrapper = (effects: EffectsMapObject) => {
+  Object.keys(effects).reduce<EffectsMapObject>((acc, cur) => {
+    acc[cur] = ({ type, payload }: AnyAction, effects: EffectsCommandMap) =>
+      effects[cur](payload, {
+        ...effects,
+        put: (type: string, pl: { [extraProps: string]: unknown }) =>
+          effects.put({ type, payload: pl }),
+      });
+    return acc;
+  }, {});
+};
 
 // 思路2, 构造对应格式进行
 
-type GetCurAction<T extends keyof AllReducer> = AllReducer[T] extends (
+/**
+ *
+ * 根据 key 找到对应的 reducer, 从中提取正确的 extra 类型
+ * 如果通过某个 key 找的的 reducer 中, extra 为可选参数, 这里直接把他处理为非可选
+ *
+ * 一个可选 extra 的样例为:
+ * insert(state: State, recore?: string) { ... }
+ *
+ * 如果想在使用时得到正确提示, 需要把这个函数重载为以下两种形式:
+ * 1. insert(state: State, recore: string) { ... }
+ * 2. insert(state: State) { ... }
+ *
+ * 因为这个工具类是用于统一处理 '携带了 extra 的 reducer' 的, 所以这里做第一种重载
+ *
+ */
+type GetCurAction<T extends KeysWithExtra> = AllReducers[T] extends (
   state: any,
   extra: infer R
 ) => any
-  ? R
+  ? T extends KeysWithPartialExtra
+    ? Exclude<R, undefined>
+    : R
   : never;
 
 type GetExtre<T> = unknown extends T ? {} : T;
 
-function commit2<T extends keyof AllReducer>(
-  type: T,
-  extra: GetExtre<GetCurAction<T>>
-) {}
-// function commit2<T extends keyof AllReducer>(type: GetSingleType<T>) {}
-
-type zas = GetCurAction<'extraAction'>;
-type z2 = GetExtre<zas>;
-
 /**
- * 把 reducer 集合的形式转换为我们需要的类型格式(对象转union), 如:
+ *
+ * 把 reducer 对象的形式转换为我们需要的类型格式(对象转union), 如:
  *
  * type origin = {
  *   extraAction(state: State, payload: {
@@ -107,7 +116,8 @@ type z2 = GetExtre<zas>;
  *   insert(state: State, userData: string): void;
  *  }
  *
- * type target = ((key: 'extraAction', extra: { id: string; age: number }) => any)
+ * type target =
+ *   | ((key: 'extraAction', extra: { id: string; age: number }) => any)
  *   | ((key: 'add', extra: unknown) => any)
  *   | ((key: 'insert', extra: string) => any);
  *
@@ -119,16 +129,18 @@ type ReducerProcesser<T, K extends keyof T = keyof T> = {
 }[K];
 
 /**
+ *
  * 判断新函数第二个参数(extra)类型, 若为 unknown 表示在上一步根本不存在 extra
  * 这样就可以区分有无 extra 参数, 取到函数 extra 的 key 集合
  * !!!  这里注意, unknown 为顶级类型, 任何类型 extends unknown 都成立
  * !!!  所以要判断一个类型 T 是否为 unknown, 就使用 unknown extends T
- * !!!  不能使用 any
+ * !!!  不能使用 any, 若存在 any, 会被判为 '不带extra的action'
  * TODO  这里存在一个问题, 如果把 GetKeysWithExtra 拆分为两个步骤会得到不同结果
  * TODO  大概猜想是由于 '分布式条件类型'/'裸类型' 引起的, 后期找时间测试, 这里的知识点还不是很清晰
  * TODO  两个步骤如下:
  * TODO  type AWE1<T> = T extends (key: any, extre: infer R1) => any ? R1 : never
  * TODO  type AWE1<T> = unknown extends T ? never : T;
+ *
  */
 type GetKeysWithExtra<T> = T extends (key: infer R, extre: infer R1) => any
   ? unknown extends R1
@@ -137,7 +149,8 @@ type GetKeysWithExtra<T> = T extends (key: infer R, extre: infer R1) => any
   : never;
 
 /**
- * 通过 extends extra? 判断是否有可选参数时, 会得到如下结果(这里以 AllReducer 为例):
+ *
+ * 通过 extends extra? 判断是否有可选参数时, 会得到如下结果(这里以 AllReducers 为例):
  *
  * type PartialExtra =
  *   | ((key: 'add', extra: unknown) => any)
@@ -146,14 +159,8 @@ type GetKeysWithExtra<T> = T extends (key: infer R, extre: infer R1) => any
  *
  * 可以发现, 不包含 extra 的函数也通过了验证, 不过其类型为 unknown, 而真正的可选参数类型为定义时的类型
  * 可以通过这一点来区分它们
+ *
  */
-// type GetKeysWithPartialExtra<T, K extends keyof T = keyof T> = {
-//   [key in K]: T[key] extends (state: any, extra?: infer R) => any
-//     ? unknown extends R
-//       ? never
-//       : (key: key, extra: R) => any
-//     : never;
-// }[K];
 type GetKeysWithPartialExtra<T> = T extends (
   key: infer R,
   extra?: infer R1
@@ -163,14 +170,18 @@ type GetKeysWithPartialExtra<T> = T extends (
     : R
   : never;
 
-// 整体处理 reducers 格式
-type ProcessedReducers = ReducerProcesser<AllReducer>;
+type Model = typeof model;
 
-// 得到 包含extra的reducer 的key的集合
-type KeysWithExtra = GetKeysWithExtra<ProcessedReducers>;
+type AllReducers = Model['reducer'];
+
+// 整体处理 reducers 格式
+type ProcessedReducers = ReducerProcesser<AllReducers>;
 
 // 得到 包含可选extra 的reducer的key的集合
 type KeysWithPartialExtra = GetKeysWithPartialExtra<ProcessedReducers>;
+
+// 得到 包含extra的reducer 的key的集合
+type KeysWithExtra = GetKeysWithExtra<ProcessedReducers>;
 
 /**
  * 得到 不包含extra 的reducer的key的集合
@@ -179,148 +190,30 @@ type KeysWithPartialExtra = GetKeysWithPartialExtra<ProcessedReducers>;
  * 所以这里做一个简单处理
  */
 type NoExtea = Exclude<
-  keyof AllReducer,
+  keyof AllReducers,
   Exclude<KeysWithExtra, KeysWithPartialExtra>
 >;
 
-// 未完待续 ^_^
-type WithExtraObj = Pick<AllReducer, KeysWithExtra>;
-
-type FunctionWithExtra = <T extends keyof WithExtraObj>(
+type ReducerWithExtra = <T extends KeysWithExtra>(
   type: T,
   extra: GetExtre<GetCurAction<T>>
 ) => void;
 
-type FunctionWithoutExtra = (type: NoExtea) => void;
+type ReducerWithoutExtra = (type: NoExtea) => void;
 
-const commit3: FunctionWithoutExtra & FunctionWithExtra = () => {};
+const commit: ReducerWithoutExtra & ReducerWithExtra = () => {};
 
-type dsa = GetTypeWithPartialExtra<AllReducer>;
+type AllEffects = Model['effects'];
 
-type ddd1 =
-  | ((
-      key: 'extraAction',
-      extra: {
-        id: string;
-        age: number;
-      }
-    ) => any)
-  | ((key: 'add', extra: unknown) => any)
-  | ((key: 'sec', extra: unknown) => any)
-  | ((key: 'insert', extra: string | undefined) => any)
-  | ((key: 'submit', extra: number) => any);
+// commit('submit');
 
-type ddd2 =
-  | ((key: 'add', extra: unknown) => any)
-  | ((key: 'sec', extra: unknown) => any)
-  | ((key: 'insert', extra: string) => any);
-// type FFFF<T> = T extends (state: any, extra?: infer R) => any
-//   ? (extra?: R) => any
-//   : T extends (state: any, extra: infer R1) => any
-//   ? (extra: R1) => any
-//   : never;
+type EffectProcesser<T, K extends keyof T = keyof T> = {
+  [key in K]: T[key] extends (extra: infer R, effects: any) => any
+    ? (key: key, extra: R) => any
+    : never;
+}[K];
 
-// type Fun = (state: any, extra: number) => any;
+// 整体处理 effects 格式
+type ProcessedEffects = EffectProcesser<AllEffects>;
 
-// type asdasd = FFFF<Fun>;
-// commit3('insert');
-
-// use Lookup<T, K> instead of T[K] in cases where the compiler
-//  cannot verify that K is a key of T
-// type Lookup<T, K> = K extends keyof T ? T[K] : never;
-
-// type getKeyProp<T extends keyEnum> = Lookup<UnionToIntersection<keyPropObj[T]>, 'prop'>;
-
-type TestType = ((key: 'a') => any) | ((key: 'b') => any);
-
-type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends (
-  k: infer I
-) => void
-  ? I
-  : never;
-
-type T_T = UnionToIntersection<TestType>;
-
-type SectionType = {};
-
-type UToI_1<T> = T extends any ? (k: T) => void : never;
-type T1 = UToI_1<TestType>;
-
-// 裸类型
-// 这是类型变会变为 分布式条件类型, 所以是 | 的关系
-type UToI_2<T> = T extends (k: infer I) => void ? I : never;
-type T2 = UToI_2<T1>;
-
-// 注意看这里的区别, 只是给泛型 T 外部的加上 [], 这是 T 的引用不在是裸类型, 不会变为 分布式条件类型, 所以关系是 &
-type UToI_2_2<T> = [T] extends [(k: infer I) => void] ? I : never;
-type T2_2 = UToI_2_2<T1>;
-
-//
-/**
- * 分布式条件形成的条件
- * 裸类型
- * https://stackoverflow.com/questions/50374908/transform-union-type-to-intersection-type#
- * https://www.bilibili.com/video/av754591185?p=1
- * https://www.typescriptlang.org/docs/handbook/release-notes/typescript-2-8.html#distributive-conditional-types
- * https://www.tslang.cn/docs/release-notes/typescript-2.8.html
- *
- * TODO
- * https://juejin.cn/post/6844904066179579918
- * https://segmentfault.com/a/1190000018514540?utm_source=tag-newest
- * https://github.com/Microsoft/TypeScript/pull/21496
- */
-
-type getInterSection<T> = [T] extends [(key: infer R) => any] ? R : never;
-type T3 = getInterSection<TestType>;
-
-type Obj = { name: string; age: number };
-type A = keyof Obj;
-
-// -------------------------------------------------------------------
-// 普通 Diff 只能用于简单类型过滤, 想过滤对象的属性diff, 可使用如下增强类型
-type Test1 = { name: string; age: number };
-type Test2 = { name: string; sex: string };
-
-type DiffKey<T, U> = T extends U ? never : T;
-
-type Diff<T, U> = DiffKey<keyof T, keyof U> | DiffKey<keyof U, keyof T>;
-
-type DiffValue<T, U, Z extends keyof (T & U)> = {
-  [K in Z]: (T & U)[K];
-};
-
-type DiffObjAttr<T, U> = DiffValue<T, U, Diff<T, U>>;
-
-// 先得到不同的 key
-type TempDiffKey = Diff<Test1, Test2>;
-
-// 从两个类型的交叉类型中取出对应的 key
-type TempDiffVal = DiffValue<Test1, Test2, TempDiffKey>;
-
-// 最终写法
-type ObjDiffAttr = DiffObjAttr<Test1, Test2>;
-
-type Bar<T> = T extends { a: (x: infer U) => void; b: (x: infer U) => void }
-  ? U
-  : never;
-type T21 = Bar<{ a: (x: string) => void; b: (x: number) => void }>;
-
-// -------------------------------------------------
-type ds = ReducerProcesser<AllReducer>;
-
-/**
- *
- * 这里验证 extends 可选参数的时候, 遇到一个问题
- * 不同的环境执行下面泛型类型, 得到的类型是不同的
- * 后经过测试, 发现是因为 tsconfig 配置文件导致的
- * 这里的问题是 compilerOptions.strict 引起的
- */
-type FFFF<T> = T extends (state: any, extra?: infer R) => any
-  ? (extra?: R) => any
-  : T extends (state: any, extra: infer R1) => any
-  ? (extra: R1) => any
-  : never;
-
-type Fun = (state: any, extra: number) => any;
-
-type asdasd = FFFF<Fun>;
+commit('');
