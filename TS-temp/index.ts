@@ -282,3 +282,21 @@ type WithoutExtra = (type: NoExtea | EffectsKeysWithNoExtea) => any;
 const commit: ReducerWithExtra & EffectWithExtra & WithoutExtra = () => {};
 
 commit('submit', { a: 2 });
+
+// type Fus<T> = T extends (k1: any, ...args: infer R) => any ? R : never;
+
+// function h(name: string, age?: number) {}
+
+// type Fu<T, K extends keyof T = keyof T> = {
+//   [key in K]: T[key] extends (state: any, extra: infer R) => any
+//     ? (key: key, extra: R) => any
+//     : {};
+// }[K];
+
+// // AllReducers
+
+// type As = Fus<(name: 1, age: any) => any>;
+
+// type ZXc = [] extends [] ? string : number
+
+// 这里想到一个思路, 使用可变参数 ... 来描述可变参数的形状, 测试了一下, 觉得可行, 明天继续
