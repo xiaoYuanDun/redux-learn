@@ -32,17 +32,31 @@ const model = {
     },
   },
   effects: {
-    *fetchData(name: number, { call }: any) {
+    *fetchData({ call }: any, name: { big: string }) {
       console.log('fetch data');
     },
-    *fetchUserData(id: string, { call, put }: any) {
+    *fetchUserData({ call, put }: any, id: string) {
       console.log('fetch user data');
       console.log('userId', id);
       put('userData');
     },
+    *save({ call }: any, id?: string) {
+      console.log(id);
+    },
     *login({ call }: any) {
       console.log('login');
     },
+    // *fetchData(name: number, { call }: any) {
+    //   console.log('fetch data');
+    // },
+    // *fetchUserData(id: string, { call, put }: any) {
+    //   console.log('fetch user data');
+    //   console.log('userId', id);
+    //   put('userData');
+    // },
+    // *login({ call }: any) {
+    //   console.log('login');
+    // },
   },
 };
 
@@ -65,12 +79,15 @@ const reducerWrapper = (reducers: ReducersMapObject) => {
 
 const effectWrapper = (effects: EffectsMapObject) => {
   Object.keys(effects).reduce<EffectsMapObject>((acc, cur) => {
-    acc[cur] = ({ type, payload }: AnyAction, effects: EffectsCommandMap) =>
-      effects[cur](payload, {
-        ...effects,
-        put: (type: string, pl: { [extraProps: string]: unknown }) =>
-          effects.put({ type, payload: pl }),
-      });
+    acc[cur] = ({ payload }: AnyAction, effects: EffectsCommandMap) =>
+      effects[cur](
+        {
+          ...effects,
+          put: (type: string, pl: { [extraProps: string]: unknown }) =>
+            effects.put({ type, payload: pl }),
+        },
+        payload
+      );
     return acc;
   }, {});
 };
@@ -79,8 +96,8 @@ const effectWrapper = (effects: EffectsMapObject) => {
 
 /**
  *
- * 根据 key 找到对应的 reducer, 从中提取正确的 extra 类型
- * 如果通过某个 key 找的的 reducer 中, extra 为可选参数, 这里直接把他处理为非可选
+ * 根据 key 找到对应的 reducer | effect, 从中提取正确的 extra 类型
+ * 如果通过某个 key 找的的 reducer | effect 中, extra 为可选参数, 这里直接把他处理为非可选
  *
  * 一个可选 extra 的样例为:
  * insert(state: State, recore?: string) { ... }
@@ -199,22 +216,69 @@ type ReducerWithExtra = <T extends KeysWithExtra>(
   extra: GetExtre<GetCurAction<T>>
 ) => void;
 
-type ReducerWithoutExtra = (type: NoExtea) => void;
+// type ReducerWithoutExtra = (type: NoExtea) => void;
 
-const commit: ReducerWithoutExtra & ReducerWithExtra = () => {};
+// const commit: ReducerWithoutExtra & ReducerWithExtra = () => {};
 
+// -- -- -- -- -- -- --
 type AllEffects = Model['effects'];
 
 // commit('submit');
 
 type EffectProcesser<T, K extends keyof T = keyof T> = {
-  [key in K]: T[key] extends (extra: infer R, effects: any) => any
+  [key in K]: T[key] extends (effects: any, extra: infer R) => any
     ? (key: key, extra: R) => any
     : never;
 }[K];
 
+type GetEffectsKeysWithPartialExtra<T> = T extends (
+  key: infer R,
+  extra?: infer R1
+) => any
+  ? unknown extends R1
+    ? never
+    : R
+  : never;
+
+type GetEffectsKeysWithExtra<T> = T extends (
+  key: infer R,
+  extra: infer R1
+) => any
+  ? unknown extends R1
+    ? never
+    : R
+  : never;
 // 整体处理 effects 格式
 type ProcessedEffects = EffectProcesser<AllEffects>;
 
-// effects 待处理
-commit('');
+// 得到 包含可选extra 的effect的key的集合
+type EffectsKeysWithPartialExtra = GetEffectsKeysWithPartialExtra<ProcessedEffects>;
+
+// 得到 包含extra 的effect的key的集合
+type EffectsKeysWithExtra = GetEffectsKeysWithExtra<ProcessedEffects>;
+
+// 得到 不包含extra 的effect的key的集合
+type EffectsKeysWithNoExtea = Exclude<
+  keyof AllEffects,
+  Exclude<EffectsKeysWithExtra, EffectsKeysWithPartialExtra>
+>;
+
+type GetCurEffectAction<
+  T extends EffectsKeysWithExtra
+> = AllEffects[T] extends (funcs: any, extra: infer R) => any
+  ? T extends EffectsKeysWithPartialExtra
+    ? Exclude<R, undefined>
+    : R
+  : never;
+
+type EffectWithExtra = <T extends EffectsKeysWithExtra>(
+  type: T,
+  extra: GetExtre<GetCurEffectAction<T>>
+) => void;
+
+type WithoutExtra = (type: NoExtea | EffectsKeysWithNoExtea) => any;
+// type EffectWithoutExtra = (type: EffectsKeysWithNoExtea) => void;
+
+const commit: ReducerWithExtra & EffectWithExtra & WithoutExtra = () => {};
+
+commit('submit', { a: 2 });
