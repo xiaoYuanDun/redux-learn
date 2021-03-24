@@ -1,36 +1,64 @@
-// 需要 TS 4.2.3+
+/**
+ *  加强版 keyof
+ *  版本要求: TS 4.2.3+
+ *
+ *  需求场景介绍:
+ *  因为在开发过程中有用到 dva modal 和 immer 特性, 所以我们在更新 modal 中的属性时, 可以直接使用 x.xx.xxx = xxxx 进行属性赋值
+ *  这时需要对调用时的 key 进行合法性约束和验证(即必须使用已经存在的属性 key), 这里我们暂时使用 keyof typeof initSate
+ *  比如现在 modal 中有如下 state:
+ *  const initSate = {
+ *    total: 0,
+ *    conditions: {
+ *      current: 1,
+ *      sons: {
+ *        age: 14,
+ *        sex: 'male'
+ *      },
+ *    },
+ *    name: 'xiao',
+ *  };
+ *  又有如下 setAttr 方法:
+ *  const setAttr = ([key, val]) => {
+ *    loadsh.set(state, key, val)
+ *  }
+ *
+ *  当我需要对 total 进行操作时, 直接 setAttr(['total', 123]) 即可, 但是一旦赋值层次变深, key 的约束验证就会发生错误, 如:
+ *  我要改变 age, 则 setAttr(['conditions.sons.age', 123]), 这是会发生 TS key 报错
+ *  " 'conditions.sons.age' 不属于 'total' | 'conditions' | 'name' "
+ *  因为这里我们只拿到可最外层 key 的集合, 实际需要的是遍历整个对象得到所有的 key 集合, 并在非最外层属性key上拼接合适的前缀
+ *
+ *  以下是具体实现:
+ */
+
 const initSate = {
   total: 0,
   conditions: {
     current: 1,
     sons: {
-      haha: '321',
-      eiei: 123,
+      age: 14,
+      sex: 'male',
+      colors: [],
     },
   },
   name: 'xiao',
-};
-type m = typeof initSate;
-
-type AddPrefix<T, S extends string> = keyof {
-  [K in keyof T as `${S}.${K & string}`]: any;
+  big: true,
 };
 
-type PowerKeys<T, K extends keyof T = keyof T> = {
-  [k1 in K]: T[k1] extends object
-    ? k1 | AddPrefix<PowerKeys<T[k1]>, k1 & string>
-    : k1;
-} extends infer R
-  ? {
-      [k2 in keyof R as `${R[k2] & string}`]: R[k2];
-    }
-  : any;
+type ModalType = typeof initSate;
 
-// type o = PowerKeys<m['conditions']>
-type o = PowerKeys<m>;
+type ValueOf<T, K extends keyof T = keyof T> = { [key in K]: T[K] }[K];
 
-type frf = {
-  [K in keyof o]: o[K];
-}[keyof o];
+type AddPrefix<T, S extends string> = T extends string ? `${S}.${T}` : never;
 
-type ie = AddPrefix<o, 'conditions'>;
+// 数据类型会被判为 object, 这里多做一层判断
+type PowerKeys<T, K extends keyof T = keyof T> = ValueOf<
+  {
+    [key in K]: T[key] extends object
+      ? T[key] extends Array<any>
+        ? key
+        : key | AddPrefix<PowerKeys<T[key]>, key & string>
+      : key;
+  }
+>;
+
+type allKeys = PowerKeys<ModalType>;
