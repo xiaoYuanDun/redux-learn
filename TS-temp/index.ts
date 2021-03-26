@@ -1,6 +1,14 @@
 import { EffectsMapObject, EffectsCommandMap } from 'dva';
 import { ReducersMapObject, AnyAction } from 'redux';
 
+type DvaModelLike = {
+  namespace: string;
+  state: any;
+  reducers: { [key: string]: any };
+  effects: { [key: string]: any };
+  subscriptions?: { [key: string]: any };
+};
+
 const initState = {
   name: 'xiaoMing',
   age: 18,
@@ -11,7 +19,7 @@ type State = typeof initState;
 const model = {
   namespace: 'hook-example',
   state: initState,
-  reducer: {
+  reducers: {
     extraAction(state: State, payload: { id: string; age: number }) {
       console.log(111);
       return state;
@@ -60,39 +68,37 @@ const model = {
   },
 };
 
-/**
- *
- * 改造 reducers 结构, 源生的 reducer 函数结构为 (state, action: { type: string, payload: any }) => any
- * 我们在定义 reducer 时只关注 payload(extra) 属性, 函数结构略有不同, 需要转化为源生的 reducer 格式
- *
- * 可以理解为 payload 于 action 之间的拆包和装包
- *
- */
+// /**
+//  *
+//  * 改造 reducers 结构, 源生的 reducer 函数结构为 (state, action: { type: string, payload: any }) => any
+//  * 我们在定义 reducer 时只关注 payload(extra) 属性, 函数结构略有不同, 需要转化为源生的 reducer 格式
+//  *
+//  * 可以理解为 payload 于 action 之间的拆包和装包
+//  *
+//  */
 
-const reducerWrapper = (reducers: ReducersMapObject) => {
-  Object.keys(reducers).reduce<ReducersMapObject>((acc, cur) => {
-    acc[cur] = (state: State, { payload }: AnyAction) =>
-      reducers[cur](state, payload);
-    return acc;
-  }, {});
-};
+// const reducerWrapper = (reducers: ReducersMapObject) => {
+//   Object.keys(reducers).reduce<ReducersMapObject>((acc, cur) => {
+//     acc[cur] = (state: State, { payload }: AnyAction) =>
+//       reducers[cur](state, payload);
+//     return acc;
+//   }, {});
+// };
 
-const effectWrapper = (effects: EffectsMapObject) => {
-  Object.keys(effects).reduce<EffectsMapObject>((acc, cur) => {
-    acc[cur] = ({ payload }: AnyAction, effects: EffectsCommandMap) =>
-      effects[cur](
-        {
-          ...effects,
-          put: (type: string, pl: { [extraProps: string]: unknown }) =>
-            effects.put({ type, payload: pl }),
-        },
-        payload
-      );
-    return acc;
-  }, {});
-};
-
-// 思路2, 构造对应格式进行
+// const effectWrapper = (effects: EffectsMapObject) => {
+//   Object.keys(effects).reduce<EffectsMapObject>((acc, cur) => {
+//     acc[cur] = ({ payload }: AnyAction, effects: EffectsCommandMap) =>
+//       effects[cur](
+//         {
+//           ...effects,
+//           put: (type: string, pl: { [extraProps: string]: unknown }) =>
+//             effects.put({ type, payload: pl }),
+//         },
+//         payload
+//       );
+//     return acc;
+//   }, {});
+// };
 
 /**
  *
@@ -108,21 +114,23 @@ const effectWrapper = (effects: EffectsMapObject) => {
  *
  * 因为这个工具类是用于统一处理 '携带了 extra 的 reducer' 的, 所以这里做第一种重载
  *
+ * GetKeysWithExtra 是 GetKeysWithPartialExtra 的超集, 所以这里要一层额外的判断
+ *
  */
-type GetCurAction<T extends KeysWithExtra> = AllReducers[T] extends (
-  state: any,
+type GetCurAction<T, K extends GetKeysWithExtra<Processer<T>>> = T[K] extends (
+  args: any,
   extra: infer R
 ) => any
-  ? T extends KeysWithPartialExtra
+  ? K extends GetKeysWithPartialExtra<Processer<T>>
     ? Exclude<R, undefined>
     : R
   : never;
 
-type GetExtre<T> = unknown extends T ? {} : T;
+// type GetExtre<T> = unknown extends T ? {} : T;
 
 /**
  *
- * 把 reducer 对象的形式转换为我们需要的类型格式(对象转union), 如:
+ * 把 reducer | effect 对象的形式转换为我们需要的类型格式(对象转union), 如:
  *
  * type origin = {
  *   extraAction(state: State, payload: {
@@ -139,7 +147,7 @@ type GetExtre<T> = unknown extends T ? {} : T;
  *   | ((key: 'insert', extra: string) => any);
  *
  */
-type ReducerProcesser<T, K extends keyof T = keyof T> = {
+type Processer<T, K extends keyof T = keyof T> = {
   [key in K]: T[key] extends (state: any, extra: infer R) => any
     ? (key: key, extra: R) => any
     : {};
@@ -187,116 +195,175 @@ type GetKeysWithPartialExtra<T> = T extends (
     : R
   : never;
 
-type Model = typeof model;
+// type Model = typeof model;
 
-type AllReducers = Model['reducer'];
+type AllReducers<M = {}> = M extends DvaModelLike ? M['reducers'] : {};
 
-// 整体处理 reducers 格式
-type ProcessedReducers = ReducerProcesser<AllReducers>;
+// // 整体处理 reducers 格式
+// type ProcessedReducers = ReducerProcesser<AllReducers>;
 
-// 得到 包含可选extra 的reducer的key的集合
-type KeysWithPartialExtra = GetKeysWithPartialExtra<ProcessedReducers>;
+// // 得到 包含可选extra 的reducer的key的集合
+// type KeysWithPartialExtra = GetKeysWithPartialExtra<ProcessedReducers>;
 
-// 得到 包含extra的reducer 的key的集合
-type KeysWithExtra = GetKeysWithExtra<ProcessedReducers>;
+// // 得到 包含extra的reducer 的key的集合
+// type KeysWithExtra = GetKeysWithExtra<ProcessedReducers>;
 
-/**
- * 得到 不包含extra 的reducer的key的集合
- *
- * 因为包含可选extra 的key集合需要同时出现在 KeysWithExtra, KeysWithPartialExtra 中
- * 所以这里做一个简单处理
- */
-type NoExtea = Exclude<
-  keyof AllReducers,
-  Exclude<KeysWithExtra, KeysWithPartialExtra>
->;
+// /**
+//  * 得到 不包含extra 的reducer的key的集合
+//  *
+//  * 因为包含可选extra 的key集合需要同时出现在 KeysWithExtra, KeysWithPartialExtra 中
+//  * 所以这里做一个简单处理
+//  */
+// type NoExtea = Exclude<
+//   keyof AllReducers,
+//   Exclude<KeysWithExtra, KeysWithPartialExtra>
+// >;
 
-type ReducerWithExtra = <T extends KeysWithExtra>(
-  type: T,
-  extra: GetExtre<GetCurAction<T>>
-) => void;
+// type ReducerWithExtra = <T extends KeysWithExtra>(
+//   type: T,
+//   extra: GetExtre<GetCurAction<T>>
+// ) => void;
 
-// type ReducerWithoutExtra = (type: NoExtea) => void;
+// // type ReducerWithoutExtra = (type: NoExtea) => void;
 
-// const commit: ReducerWithoutExtra & ReducerWithExtra = () => {};
+// // const commit: ReducerWithoutExtra & ReducerWithExtra = () => {};
 
-// -- -- -- -- -- -- --
-type AllEffects = Model['effects'];
+// // -- -- -- -- -- -- --
+type AllEffects<M = {}> = M extends DvaModelLike ? M['effects'] : {};
 
-// commit('submit');
+// // commit('submit');
 
-type EffectProcesser<T, K extends keyof T = keyof T> = {
-  [key in K]: T[key] extends (effects: any, extra: infer R) => any
-    ? (key: key, extra: R) => any
-    : never;
-}[K];
+// type EffectProcesser<T, K extends keyof T = keyof T> = {
+//   [key in K]: T[key] extends (effects: any, extra: infer R) => any
+//     ? (key: key, extra: R) => any
+//     : never;
+// }[K];
 
-type GetEffectsKeysWithPartialExtra<T> = T extends (
-  key: infer R,
-  extra?: infer R1
-) => any
-  ? unknown extends R1
-    ? never
-    : R
-  : never;
+// type GetEffectsKeysWithPartialExtra<T> = T extends (
+//   key: infer R,
+//   extra?: infer R1
+// ) => any
+//   ? unknown extends R1
+//     ? never
+//     : R
+//   : never;
 
-type GetEffectsKeysWithExtra<T> = T extends (
-  key: infer R,
-  extra: infer R1
-) => any
-  ? unknown extends R1
-    ? never
-    : R
-  : never;
-// 整体处理 effects 格式
-type ProcessedEffects = EffectProcesser<AllEffects>;
+// type GetEffectsKeysWithExtra<T> = T extends (
+//   key: infer R,
+//   extra: infer R1
+// ) => any
+//   ? unknown extends R1
+//     ? never
+//     : R
+//   : never;
+// // 整体处理 effects 格式
+// type ProcessedEffects = EffectProcesser<AllEffects>;
 
-// 得到 包含可选extra 的effect的key的集合
-type EffectsKeysWithPartialExtra = GetEffectsKeysWithPartialExtra<ProcessedEffects>;
+// // 得到 包含可选extra 的effect的key的集合
+// type EffectsKeysWithPartialExtra = GetEffectsKeysWithPartialExtra<ProcessedEffects>;
 
-// 得到 包含extra 的effect的key的集合
-type EffectsKeysWithExtra = GetEffectsKeysWithExtra<ProcessedEffects>;
+// // 得到 包含extra 的effect的key的集合
+// type EffectsKeysWithExtra = GetEffectsKeysWithExtra<ProcessedEffects>;
 
-// 得到 不包含extra 的effect的key的集合
-type EffectsKeysWithNoExtea = Exclude<
-  keyof AllEffects,
-  Exclude<EffectsKeysWithExtra, EffectsKeysWithPartialExtra>
->;
+// // 得到 不包含extra 的effect的key的集合
+// type EffectsKeysWithNoExtea = Exclude<
+//   keyof AllEffects,
+//   Exclude<EffectsKeysWithExtra, EffectsKeysWithPartialExtra>
+// >;
 
-type GetCurEffectAction<
-  T extends EffectsKeysWithExtra
-> = AllEffects[T] extends (funcs: any, extra: infer R) => any
-  ? T extends EffectsKeysWithPartialExtra
-    ? Exclude<R, undefined>
-    : R
-  : never;
+// type GetCurEffectAction<
+//   T extends EffectsKeysWithExtra
+// > = AllEffects[T] extends (funcs: any, extra: infer R) => any
+//   ? T extends EffectsKeysWithPartialExtra
+//     ? Exclude<R, undefined>
+//     : R
+//   : never;
 
-type EffectWithExtra = <T extends EffectsKeysWithExtra>(
-  type: T,
-  extra: GetExtre<GetCurEffectAction<T>>
-) => void;
+// type EffectWithExtra = <T extends EffectsKeysWithExtra>(
+//   type: T,
+//   extra: GetExtre<GetCurEffectAction<T>>
+// ) => void;
 
-type WithoutExtra = (type: NoExtea | EffectsKeysWithNoExtea) => any;
-// type EffectWithoutExtra = (type: EffectsKeysWithNoExtea) => void;
+// type WithoutExtra = (type: NoExtea | EffectsKeysWithNoExtea) => any;
+// // type EffectWithoutExtra = (type: EffectsKeysWithNoExtea) => void;
 
-const commit: ReducerWithExtra & EffectWithExtra & WithoutExtra = () => {};
+// // const commit: ReducerWithExtra & EffectWithExtra & WithoutExtra = () => {};
 
-commit('submit', { a: 2 });
-
-// type Fus<T> = T extends (k1: any, ...args: infer R) => any ? R : never;
-
-// function h(name: string, age?: number) {}
-
-// type Fu<T, K extends keyof T = keyof T> = {
+// type Processer<T, K extends keyof T = keyof T> = {
 //   [key in K]: T[key] extends (state: any, extra: infer R) => any
 //     ? (key: key, extra: R) => any
 //     : {};
 // }[K];
 
-// // AllReducers
+type GetInfoWithExtra<
+  M extends DvaModelLike,
+  S extends 'reducers' | 'effects',
+  R = S extends 'reducers' ? AllReducers<M> : AllEffects<M>
+> = <T extends GetKeysWithExtra<Processer<R>>>(
+  type: T,
+  extra: GetCurAction<R, T>
+) => any;
 
-// type As = Fus<(name: 1, age: any) => any>;
+type GetInfoWithNoExtra<
+  M extends DvaModelLike,
+  S extends 'reducers' | 'effects',
+  R = S extends 'reducers' ? AllReducers<M> : AllEffects<M>
+> = Exclude<
+  keyof R,
+  Exclude<GetKeysWithExtra<Processer<R>>, GetKeysWithPartialExtra<Processer<R>>>
+>;
 
-// type ZXc = [] extends [] ? string : number
+type CommitWith<M extends DvaModelLike> = (
+  type: GetInfoWithNoExtra<M, 'reducers'> | GetInfoWithNoExtra<M, 'effects'>
+) => any;
 
-// 这里想到一个思路, 使用可变参数 ... 来描述可变参数的形状, 测试了一下, 觉得可行, 明天继续
+type reducers = GetInfoWithExtra<typeof model, 'reducers'>;
+const commit: reducers = () => {};
+commit('extraAction', { id: '2', age: 2 });
+commit('insert', '312');
+commit('submit', { s: 2 });
+
+type effects = GetInfoWithExtra<typeof model, 'effects'>;
+const commit1: effects = () => {};
+commit1('fetchData', { big: '3' });
+commit1('fetchUserData', '2');
+commit1('save', '3');
+
+type noExtra = CommitWith<typeof model>;
+const commit2: noExtra = () => {};
+commit2('insert');
+commit2('add');
+
+type GetAllInfo<M extends DvaModelLike> = GetInfoWithExtra<
+  typeof model,
+  'reducers'
+> &
+  GetInfoWithExtra<typeof model, 'effects'> &
+  CommitWith<M>;
+
+type allInfo = GetAllInfo<typeof model>;
+const commit3: allInfo = () => {};
+commit3('add');
+commit3('extraAction', { id: '2', age: 0 });
+commit3('fetchData', { big: '2' });
+
+// commit('submit', { a: 2 });
+// // commit('extraAction');
+
+// // type Fus<T> = T extends (k1: any, ...args: infer R) => any ? R : never;
+
+// // function h(name: string, age?: number) {}
+
+// // type Fu<T, K extends keyof T = keyof T> = {
+// //   [key in K]: T[key] extends (state: any, extra: infer R) => any
+// //     ? (key: key, extra: R) => any
+// //     : {};
+// // }[K];
+
+// // // AllReducers
+
+// // type As = Fus<(name: 1, age: any) => any>;
+
+// // type ZXc = [] extends [] ? string : number
+
+// // 这里想到一个思路, 使用可变参数 ... 来描述可变参数的形状, 测试了一下, 觉得可行, 明天继续
