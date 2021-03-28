@@ -1,0 +1,72 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>Static Template</title>
+    <script>
+      {
+
+
+        
+        let i = 0
+        async function logInfo(mess) {
+          await new Promise(resolve => {
+            setTimeout(resolve, 1500)
+          })
+          console.log(`第${i}次调用原始方法.`)
+          if (i < 5) {
+            throw new Error("错啦");
+          }
+          console.log("成功啦");
+        }
+        const retryable = (fn, n) => {
+          let count = 0
+          const invokeFun = (...args) => {
+            i++
+            return new Promise(resolve => {
+              resolve(fn(...args))
+            }).then(res => res, err => {
+              if(++count < n) {
+                invokeFun(...args)
+              } else {
+                throw new Error(err)
+              }
+            })
+          }
+          return invokeFun
+        };
+  
+
+        const nf = retryable(logInfo, 3)
+        console.log('start...')
+        nf('123')
+        console.log('end...')
+
+
+
+
+        // const retryable = (fn, n) => {
+        //   let count = 0
+        //   return (...args) => new Promise(resolve => {
+        //     resolve(fn(...args))
+        //   }).then(res => res, err => {
+        //     if(++count < n) {
+        //       invokeFun(...args)
+        //     } else {
+        //       throw new Error(err)
+        //     }
+        //   })
+        // };
+        
+      }
+    </script>
+  </head>
+  <body>
+    <h1>
+      This is a static template, there is no bundler or bundling involved!
+    </h1>
+  </body>
+</html>
